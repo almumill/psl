@@ -30,81 +30,85 @@ import org.linqs.psl.reasoner.term.Hyperplane;
  */
 public abstract class HyperplaneTerm extends ADMMObjectiveTerm {
     protected final float[] coefficients;
-    protected final float[] unitNormal;
     protected final float constant;
-    // Only allocate once.
-    protected final float[] point;
+
+    // These variables are used when solving the objective function.
+    // We keep them as member data to avoid multiple allocations.
+
+    /**
+     * The optimizer considering only the consensus values (and not the constraint imposed by this local hyperplane).
+     * This optimizer will be projected onto this hyperplane to minimize.
+     */
+    protected final float[] consensusOptimizer;
+    protected final float[] unitNormal;
 
     public HyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
         super(hyperplane, groundRule);
 
-        this.coefficients = hyperplane.getCoefficients();
-        this.constant = hyperplane.getConstant();
-        this.point = new float[size];
+        coefficients = hyperplane.getCoefficients();
+        constant = hyperplane.getConstant();
 
-        if (size >= 3) {
-            // Finds a unit vector normal to the hyperplane and a point in the hyperplane for future projections.
+        if (size == 1) {
+            // If the hyperplane only has one random variable, we can take shortcuts solving it.
+            consensusOptimizer = null;
+            unitNormal = null;
+        } else {
+            consensusOptimizer = new float[size];
+            unitNormal = new float[size];
+
             float length = 0.0f;
             for (int i = 0; i < size; i++) {
                 length += coefficients[i] * coefficients[i];
             }
             length = (float)Math.sqrt(length);
 
-            unitNormal = new float[size];
             for (int i = 0; i < size; i++) {
                 unitNormal[i] = coefficients[i] / length;
             }
-        } else {
-            unitNormal = null;
         }
     }
 
     /**
-     * Finds the orthogonal projection onto the hyperplane <br />
-     * argmin stepSize/2 * \|x - z + y / stepSize \|_2^2 <br />
-     * such that coefficients^T * x = constant.
-     * <p>
-     * Stores the result in x.
+     * Project the solution to the consensus problem onto this hyperplane,
+     * thereby finding the min solution.
+     * The consensus problem is:
+     * [argmin_local stepSize / 2 * ||local - consensus + lagrange / stepSize ||_2^2],
+     * while this hyperplane is: [coefficients^T * local = constant].
+     * The result of the projection is stored in the local variables.
      */
     protected void project(float stepSize, float[] consensusValues) {
-        // Deal with short hyperplanes specially.
+        // When there is only one variable, there is only one answer.
+        // This answer must satisfy the constraint.
         if (size == 1) {
             variables[0].setValue(constant / coefficients[0]);
             return;
         }
 
-        // Deal with short hyperplanes specially.
-        if (size == 2) {
-            float x0;
-            float x1;
-            float coeff0 = coefficients[0];
-            float coeff1 = coefficients[1];
+        // ConsensusOptimizer = Projection + (multiplier)(unitNormal).
+        // Note that the projection is in this hyperplane and therefore orthogonal to the unitNormal.
+        // So, these two orthogonal components can makeup the consensusOptimizer.
 
-            x0 = stepSize * consensusValues[variables[0].getGlobalId()] - variables[0].getLagrange();
-            x0 -= stepSize * coeff0 / coeff1 * (-1.0 * constant / coeff1 + consensusValues[variables[1].getGlobalId()] - variables[1].getLagrange() / stepSize);
-            x0 /= stepSize * (1.0 + coeff0 * coeff0 / coeff1 / coeff1);
-
-            x1 = (constant - coeff0 * x0) / coeff1;
-
-            variables[0].setValue(x0);
-            variables[1].setValue(x1);
-
-            return;
+        // Get the min w.r.t. to the consensus values.
+        // This is done by taking a step according to the lagrange.
+        for (int i = 0; i < size; i++) {
+            consensusOptimizer[i] = consensusValues[variables[i].getGlobalId()] - variables[i].getLagrange() / stepSize;
         }
 
+        // Get the length of the normal.
+        // Any matching index can be used to compute the length.
+        float length = coefficients[0] / unitNormal[0];
+
+        // Get the multiplier to the unit normal that properly scales it to match the consensus optimizer.
+        // We start with the constant, because it is actually part of our vector,
+        // but since it always has a 1 cofficient we treat it differently.
+        float multiplier = -1.0f * constant / length;
         for (int i = 0; i < size; i++) {
-            point[i] = consensusValues[variables[i].getGlobalId()] - variables[i].getLagrange() / stepSize;
+            multiplier += consensusOptimizer[i] * unitNormal[i];
         }
 
-        // For point (constant / coefficients[0], 0,...) in hyperplane dotted with unitNormal,
-        float multiplier = -1.0f * constant / coefficients[0] * unitNormal[0];
-
+        // Projection = ConsensusOptimizer - (multiplier)(unitNormal).
         for (int i = 0; i < size; i++) {
-            multiplier += point[i] * unitNormal[i];
-        }
-
-        for (int i = 0; i < size; i++) {
-            variables[i].setValue(point[i] - multiplier * unitNormal[i]);
+            variables[i].setValue(consensusOptimizer[i] - multiplier * unitNormal[i]);
         }
     }
 
