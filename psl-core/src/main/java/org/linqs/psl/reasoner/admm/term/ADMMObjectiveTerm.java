@@ -18,6 +18,7 @@
 package org.linqs.psl.reasoner.admm.term;
 
 import org.linqs.psl.model.rule.GroundRule;
+import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.reasoner.term.Hyperplane;
 import org.linqs.psl.reasoner.term.ReasonerTerm;
 
@@ -25,7 +26,9 @@ import org.linqs.psl.reasoner.term.ReasonerTerm;
  * A term in the objective to be optimized by an ADMMReasoner.
  */
 public abstract class ADMMObjectiveTerm implements ReasonerTerm {
+    // TODO(eriq): Remove the reference to a ground rule.
     protected final GroundRule groundRule;
+    protected final float weight;
     protected final LocalVariable[] variables;
     protected final int size;
 
@@ -36,6 +39,12 @@ public abstract class ADMMObjectiveTerm implements ReasonerTerm {
         this.variables = hyperplane.getVariables();
         this.size = hyperplane.size();
         this.groundRule = groundRule;
+
+        if (groundRule instanceof WeightedGroundRule) {
+            this.weight = (float)((WeightedGroundRule)groundRule).getWeight();
+        } else {
+            this.weight = Float.POSITIVE_INFINITY;
+        }
     }
 
     public void updateLagrange(float stepSize, float[] consensusValues) {

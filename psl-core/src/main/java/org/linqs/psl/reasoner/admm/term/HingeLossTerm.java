@@ -19,71 +19,10 @@ package org.linqs.psl.reasoner.admm.term;
 
 import org.linqs.psl.reasoner.term.Hyperplane;
 import org.linqs.psl.model.rule.GroundRule;
-import org.linqs.psl.model.rule.WeightedGroundRule;
 
-/**
- * ADMMReasoner objective term of the form <br />
- * weight * max(coefficients^T * x - constant, 0)
- *
- * All coefficients must be non-zero.
- */
+// TODO(eriq): Deprecated
 public class HingeLossTerm extends HyperplaneTerm {
     public HingeLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
-        super(groundRule, hyperplane);
-    }
-
-    @Override
-    public void minimize(float stepSize, float[] consensusValues) {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        float total = 0.0f;
-
-        // Minimizes without the linear loss, i.e., solves
-        // argmin stepSize/2 * \|x - z + y / stepSize \|_2^2
-        for (int i = 0; i < size; i++) {
-            LocalVariable variable = variables[i];
-            variable.setValue(consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize);
-            total += (coefficients[i] * variable.getValue());
-        }
-
-        // If the linear loss is NOT active at the computed point, it is the solution...
-        if (total <= constant) {
-            return;
-        }
-
-        // Else, minimizes with the linear loss, i.e., solves
-        // argmin weight * coefficients^T * x + stepSize/2 * \|x - z + y / stepSize \|_2^2
-        total = 0.0f;
-        for (int i = 0; i < size; i++) {
-            LocalVariable variable = variables[i];
-
-            // TODO(eriq): We just took this step above. Is ADMM accidentally taking two steps?
-            variable.setValue(consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize);
-            variable.setValue(variable.getValue() - weight * coefficients[i] / stepSize);
-
-            total += coefficients[i] * variable.getValue();
-        }
-
-        // If the linear loss IS active at the computed point, it is the solution...
-        if (total >= constant) {
-            return;
-        }
-
-        // Else, the solution is on the hinge.
-        project(stepSize, consensusValues);
-    }
-
-    /**
-     * weight * max(0.0, coefficients^T * x - constant)
-     */
-    @Override
-    public float evaluate() {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        return weight * Math.max(super.evaluate(), 0.0f);
-    }
-
-    @Override
-    public float evaluate(float[] consensusValues) {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        return weight * Math.max(super.evaluate(consensusValues), 0.0f);
+        super(groundRule, hyperplane, null);
     }
 }

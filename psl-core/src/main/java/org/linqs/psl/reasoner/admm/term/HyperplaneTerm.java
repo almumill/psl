@@ -18,22 +18,43 @@
 package org.linqs.psl.reasoner.admm.term;
 
 import org.linqs.psl.model.rule.GroundRule;
+import org.linqs.psl.reasoner.function.FunctionComparator;
 import org.linqs.psl.reasoner.term.Hyperplane;
+import org.linqs.psl.util.MathUtils;
 
 /**
  * Objective term for an ADMMReasoner that is based on a hyperplane in some way.
  *
- * Stores the characterization of the hyperplane as coefficients^T * x = constant
- * and projects onto the hyperplane.
+ * This general class covers two specific types of terms:
+ * 1) HingeLossTerm: weight * max(0, coefficients^T * y - constant).
+ * 2) LinearConstraintTerm: (0 if coefficients^T * y [comparator] constant) or (infinity otherwise)
+ * Where y can be either local or concensus values.
+ *
+ * The reason these terms are housed in a single class instead of subclasses is for performance
+ * in streaming settings where terms must be quickly serialized and deserialized.
  *
  * All coefficients must be non-zero.
  */
-public abstract class HyperplaneTerm extends ADMMObjectiveTerm {
+public class HyperplaneTerm extends ADMMObjectiveTerm {
+    /**
+     * The specific type of term represented by this instance.
+     */
+    public static enum TermType {
+        HingeLossTerm,
+        LinearConstraintTerm
+    }
+
     protected final float[] coefficients;
     protected final float constant;
 
+    /**
+     * When non-null, this term must be a hard constraint.
+     */
+    protected final FunctionComparator comparator;
+
     // These variables are used when solving the objective function.
     // We keep them as member data to avoid multiple allocations.
+    // However, they may be null when they don't apply to the specific type of term.
 
     /**
      * The optimizer considering only the consensus values (and not the constraint imposed by this local hyperplane).
@@ -42,11 +63,23 @@ public abstract class HyperplaneTerm extends ADMMObjectiveTerm {
     protected final float[] consensusOptimizer;
     protected final float[] unitNormal;
 
-    public HyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
+    public static HyperplaneTerm createHingeLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
+        return new HyperplaneTerm(groundRule, hyperplane, null);
+    }
+
+    public static HyperplaneTerm createLinearConstraintTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane, FunctionComparator comparator) {
+        return new HyperplaneTerm(groundRule, hyperplane, comparator);
+    }
+
+    /**
+     * The full constructor is made available, but callers should favor the static creation methods.
+     */
+    public HyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane, FunctionComparator comparator) {
         super(hyperplane, groundRule);
 
         coefficients = hyperplane.getCoefficients();
         constant = hyperplane.getConstant();
+        this.comparator = comparator;
 
         if (size == 1) {
             // If the hyperplane only has one random variable, we can take shortcuts solving it.
@@ -66,6 +99,182 @@ public abstract class HyperplaneTerm extends ADMMObjectiveTerm {
                 unitNormal[i] = coefficients[i] / length;
             }
         }
+    }
+
+    @Override
+    public void minimize(float stepSize, float[] consensusValues) {
+        if (getTermType() == TermType.HingeLossTerm) {
+            minimizeHingeLoss(stepSize, consensusValues);
+        } else {
+            minimizeConstraint(stepSize, consensusValues);
+        }
+    }
+
+    @Override
+    public float evaluate() {
+        if (getTermType() == TermType.HingeLossTerm) {
+            return evaluateHingeLoss();
+        } else {
+            return evaluateConstraint();
+        }
+    }
+
+    @Override
+    public float evaluate(float[] consensusValues) {
+        if (getTermType() == TermType.HingeLossTerm) {
+            return evaluateHingeLoss(consensusValues);
+        } else {
+            return evaluateConstraint(consensusValues);
+        }
+    }
+
+    public TermType getTermType() {
+        if (comparator == null) {
+            return TermType.HingeLossTerm;
+        } else {
+            return TermType.LinearConstraintTerm;
+        }
+    }
+
+    // Functionality for hinge-loss terms.
+
+    public void minimizeHingeLoss(float stepSize, float[] consensusValues) {
+        // Look to see if the solution is in one of three sections (in increasing order of difficulty):
+        // 1) The flat region.
+        // 2) The linear region.
+        // 3) The hinge point.
+
+        // Take a gradient step and see if we are in the flat region.
+        float total = 0.0f;
+        for (int i = 0; i < size; i++) {
+            LocalVariable variable = variables[i];
+            variable.setValue(consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize);
+            total += (coefficients[i] * variable.getValue());
+        }
+
+        // If we are on the flat region, then we are at a solution.
+        if (total <= constant) {
+            return;
+        }
+
+        // Take a gradient step and see if we are in the linear region.
+        total = 0.0f;
+        for (int i = 0; i < size; i++) {
+            LocalVariable variable = variables[i];
+            variable.setValue((consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize) - (weight * coefficients[i] / stepSize));
+            total += coefficients[i] * variable.getValue();
+        }
+
+        // If we are in the linear region, then we are at a solution.
+        if (total >= constant) {
+            return;
+        }
+
+        // We are on the hinge, project to find the solution.
+        project(stepSize, consensusValues);
+    }
+
+    /**
+     * weight * max(0.0, coefficients^T * x - constant)
+     */
+    public float evaluateHingeLoss() {
+        return weight * Math.max(0.0f, computeInnerPotential());
+    }
+
+    /**
+     * weight * max(0.0, coefficients^T * x - constant)
+     */
+    public float evaluateHingeLoss(float[] consensusValues) {
+        return weight * Math.max(0.0f, computeInnerPotential(consensusValues));
+    }
+
+    // Functionality for constraint terms.
+
+    public float evaluateConstraint() {
+        return evaluateConstraint(null);
+    }
+
+    /**
+     * Evalauate to zero if the constraint is satisfied, infinity otherwise.
+     * if (coefficients^T * y [comparator] constant) { return 0.0 }
+     * else { return infinity }
+     */
+    private float evaluateConstraint(float[] consensusValues) {
+        float value = 0.0f;
+        if (consensusValues == null) {
+            value = computeInnerPotential();
+        } else {
+            value = computeInnerPotential(consensusValues);
+        }
+
+        if (comparator.equals(FunctionComparator.EQ)) {
+            if (MathUtils.isZero(value, MathUtils.RELAXED_EPSILON)) {
+                return 0.0f;
+            }
+            return Float.POSITIVE_INFINITY;
+        } else if (comparator.equals(FunctionComparator.LTE)) {
+            if (value <= 0.0f) {
+                return 0.0f;
+            }
+            return Float.POSITIVE_INFINITY;
+        } else if (comparator.equals(FunctionComparator.GTE)) {
+            if (value >= 0.0f) {
+                return 0.0f;
+            }
+            return Float.POSITIVE_INFINITY;
+        } else {
+            throw new IllegalStateException("Unknown comparison function.");
+        }
+    }
+
+    public void minimizeConstraint(float stepSize, float[] consensusValues) {
+        // If the constraint is an inequality, then we may be able to solve without projection.
+        if (!comparator.equals(FunctionComparator.EQ)) {
+            float total = 0.0f;
+
+            // Take the lagrange step and see if that is the solution.
+            for (int i = 0; i < size; i++) {
+                LocalVariable variable = variables[i];
+                variable.setValue(consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize);
+                total += coefficients[i] * variable.getValue();
+            }
+
+            // If the constraint is satisfied, them we are done.
+            if ((comparator.equals(FunctionComparator.LTE) && total <= constant)
+                    || (comparator.equals(FunctionComparator.GTE) && total >= constant)) {
+                return;
+            }
+        }
+
+        // If the naive minimization didn't work, or if it's an equality constraint,
+        // then project onto the hyperplane.
+        project(stepSize, consensusValues);
+    }
+
+    // General Utilities
+
+    /**
+     * coefficients^T * local - constant
+     */
+    private float computeInnerPotential() {
+        float value = 0.0f;
+        for (int i = 0; i < size; i++) {
+            value += coefficients[i] * variables[i].getValue();
+        }
+
+        return value - constant;
+    }
+
+    /**
+     * coefficients^T * consensus - constant
+     */
+    private float computeInnerPotential(float[] consensusValues) {
+        float value = 0.0f;
+        for (int i = 0; i < size; i++) {
+            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
+        }
+
+        return value - constant;
     }
 
     /**
@@ -110,28 +319,5 @@ public abstract class HyperplaneTerm extends ADMMObjectiveTerm {
         for (int i = 0; i < size; i++) {
             variables[i].setValue(consensusOptimizer[i] - multiplier * unitNormal[i]);
         }
-    }
-
-    /**
-     * coefficients^T * x - constant
-     */
-    @Override
-    public float evaluate() {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * variables[i].getValue();
-        }
-
-        return value - constant;
-    }
-
-    @Override
-    public float evaluate(float[] consensusValues) {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
-        }
-
-        return value - constant;
     }
 }
