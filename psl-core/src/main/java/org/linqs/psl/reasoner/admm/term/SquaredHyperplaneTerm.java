@@ -73,8 +73,6 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
     /**
      * The full constructor is made available, but callers should favor the static creation methods.
      */
-
-
     public SquaredHyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane, boolean hinge) {
         super(hyperplane, groundRule);
 
@@ -82,13 +80,6 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
         this.constant = hyperplane.getConstant();
         this.hinge = hinge;
     }
-
-
-
-
-
-
-
 
     @Override
     public void minimize(float stepSize, float[] consensusValues) {
@@ -125,9 +116,6 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
         }
     }
 
-
-
-
     // Functionality for SquaredLinearLoss  terms.
 
     public void minimizeSquaredLinearLoss(float stepSize, float[] consensusValues) {
@@ -150,79 +138,80 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
 
     // Functionality for SquaredHingeLoss terms.
 
-
-
-
-
     public void minimizeSquaredHingeLoss(float stepSize, float[] consensusValues) {
+        // Take a gradient step and see if we are in the flat region.
+        float total = 0.0f;
+        for (int i = 0; i < size; i++) {
+            LocalVariable variable = variables[i];
+            variable.setValue(consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize);
+            total += coefficients[i] * variable.getValue();
+        }
+
+        // If we are on the flat region, then we are at a solution.
+        if (total <= constant) {
+            return;
+        }
+
+        // We are in the quadratic region, so solve that to find a solution.
+        minWeightedSquaredHyperplane(stepSize, consensusValues);
     }
 
     /**
+     * weight * [max(0, coefficients^T * local - constant)]^2
      */
     public float evaluateSquaredHingeLoss() {
-        return 1.0f;
+        return weight * (float)Math.pow(Math.max(0.0f, computeInnerPotential()), 2.0);
     }
 
     /**
+     * weight * [max(0, coefficients^T * consensus - constant)]^2
      */
     public float evaluateSquaredHingeLoss(float[] consensusValues) {
-        return 1.0f;
+        return weight * (float)Math.pow(Math.max(0.0f, computeInnerPotential(consensusValues)), 2.0);
     }
 
-
-
-
-
-
-
-
-
-
-    // TEST
-
-
-
-
-
-
-
+    // General Utilities
 
     /**
-     * Minimizes the weighted, squared hyperplane <br />
-     * argmin weight * (coefficients^T * x - constant)^2 + stepSize/2 * \|x - z + y / stepSize \|_2^2
-     * <p>
-     * Stores the result in x.
+     * Minimizes the term as a weighted, squared hyperplane.
+     * This function to minimize takes the form:
+     * weight * [coefficients^T * consensus - constant]^2 + (stepsize / 2) * || local - consensus + lagrange / stepsize ||_2^2.
+     *
+     * The result of the minimization will be stored in the local variables.
      */
     protected void minWeightedSquaredHyperplane(float stepSize, float[] consensusValues) {
-        // Pre-load the variable Construct constant term in the gradient (moved to right-hand side).
+        // Different solving methods will be used depending on the size of the hyperplane.
+
+        // Pre-load the local variable with a term that is common in all the solutions:
+        // stepsize * consensus - lagrange + (2 * weight * coefficients * constant).
         for (int i = 0; i < size; i++) {
-            float value = stepSize * (consensusValues[variables[i].getGlobalId()] - variables[i].getLagrange() / stepSize);
-            value += 2 * weight * coefficients[i] * constant;
+            float value =
+                    stepSize * consensusValues[variables[i].getGlobalId()] - variables[i].getLagrange()
+                    + 2.0f * weight * coefficients[i] * constant;
 
             variables[i].setValue(value);
         }
 
-        // Solve for x
-
-        // Handle very small hyperplanes specially.
+        // Hyperplanes with only one variable can be solved trivially.
         if (size == 1) {
             LocalVariable variable = variables[0];
             float coefficient = coefficients[0];
 
-            variable.setValue(variable.getValue() / (2 * weight * coefficient * coefficient + stepSize));
+            variable.setValue(variable.getValue() / (2.0f * weight * coefficient * coefficient + stepSize));
+
             return;
         }
 
-        // Handle small hyperplanes specially.
+        // Hyperplanes with only two variables can be solved fairly easily.
         if (size == 2) {
             LocalVariable variable0 = variables[0];
             LocalVariable variable1 = variables[1];
-            float coeff0 = coefficients[0];
-            float coeff1 = coefficients[1];
+            float coefficient0 = coefficients[0];
+            float coefficient1 = coefficients[1];
 
-            float a0 = 2 * weight * coeff0 * coeff0 + stepSize;
-            float b1 = 2 * weight * coeff1 * coeff1 + stepSize;
-            float a1b0 = 2 * weight * coeff0 * coeff1;
+            float a0 = 2.0f * weight * coefficient0 * coefficient0 + stepSize;
+            float b1 = 2.0f * weight * coefficient1 * coefficient1 + stepSize;
+            float a1b0 = 2.0f * weight * coefficient0 * coefficient1;
 
             variable1.setValue(variable1.getValue() - a1b0 * variable0.getValue() / a0);
             variable1.setValue(variable1.getValue() / (b1 - a1b0 * a1b0 / a0));
@@ -232,7 +221,8 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
             return;
         }
 
-        // Fast system solve.
+        // In the case of larger hyperplanes, we can use a Cholesky decomposition to minimize.
+
         FloatMatrix lowerTriangle = fetchLowerTriangle(stepSize);
 
         for (int i = 0; i < size; i++) {
@@ -322,10 +312,10 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
             // Note that the matrix is symmetric.
             for (int j = i; j < size; j++) {
                 if (i == j) {
-                    coefficient = 2 * weight * coefficients[i] * coefficients[i] + stepSize;
+                    coefficient = 2.0f * weight * coefficients[i] * coefficients[i] + stepSize;
                     matrix.set(i, i, coefficient);
                 } else {
-                    coefficient = 2 * weight * coefficients[i] * coefficients[j];
+                    coefficient = 2.0f * weight * coefficients[i] * coefficients[j];
                     matrix.set(i, j, coefficient);
                     matrix.set(j, i, coefficient);
                 }

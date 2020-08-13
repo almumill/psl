@@ -21,7 +21,7 @@ import org.linqs.psl.model.rule.GroundRule;
 import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.reasoner.term.Hyperplane;
 
-// TODO(eriq): Deprecated/
+// TODO(eriq): Deprecated.
 public class SquaredLinearLossTerm extends SquaredHyperplaneTerm {
     public SquaredLinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
         super(groundRule, hyperplane, false);
