@@ -44,13 +44,11 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
     /**
      * The specific type of term represented by this instance.
      */
-    public static enum TermType {
+    public static enum HyperplaneTermType {
         SquaredLinearLossTerm,
         SquaredHingeLossTerm,
     }
 
-    protected final float[] coefficients;
-    protected final float constant;
     protected final boolean hinge;
 
     /**
@@ -62,7 +60,7 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
      */
     private static Map<Integer, FloatMatrix> lowerTriangleCache = new HashMap<Integer, FloatMatrix>();
 
-    public static SquaredHyperplaneTerm createLinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
+    public static SquaredHyperplaneTerm createSquaredLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
         return new SquaredHyperplaneTerm(groundRule, hyperplane, false);
     }
 
@@ -76,14 +74,12 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
     public SquaredHyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane, boolean hinge) {
         super(hyperplane, groundRule);
 
-        this.coefficients = hyperplane.getCoefficients();
-        this.constant = hyperplane.getConstant();
         this.hinge = hinge;
     }
 
     @Override
     public void minimize(float stepSize, float[] consensusValues) {
-        if (getTermType() == TermType.SquaredHingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.SquaredHingeLossTerm) {
             minimizeSquaredHingeLoss(stepSize, consensusValues);
         } else {
             minimizeSquaredLinearLoss(stepSize, consensusValues);
@@ -92,7 +88,7 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
 
     @Override
     public float evaluate() {
-        if (getTermType() == TermType.SquaredHingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.SquaredHingeLossTerm) {
             return evaluateSquaredHingeLoss();
         } else {
             return evaluateSquaredLinearLoss();
@@ -101,22 +97,22 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
 
     @Override
     public float evaluate(float[] consensusValues) {
-        if (getTermType() == TermType.SquaredHingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.SquaredHingeLossTerm) {
             return evaluateSquaredHingeLoss(consensusValues);
         } else {
             return evaluateSquaredLinearLoss(consensusValues);
         }
     }
 
-    public TermType getTermType() {
+    public HyperplaneTermType getHyperplaneTermType() {
         if (hinge) {
-            return TermType.SquaredHingeLossTerm;
+            return HyperplaneTermType.SquaredHingeLossTerm;
         } else {
-            return TermType.SquaredLinearLossTerm;
+            return HyperplaneTermType.SquaredLinearLossTerm;
         }
     }
 
-    // Functionality for SquaredLinearLoss  terms.
+    // Functionality for SquaredLinearLoss terms.
 
     public void minimizeSquaredLinearLoss(float stepSize, float[] consensusValues) {
         minWeightedSquaredHyperplane(stepSize, consensusValues);
@@ -175,7 +171,7 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
     /**
      * Minimizes the term as a weighted, squared hyperplane.
      * This function to minimize takes the form:
-     * weight * [coefficients^T * consensus - constant]^2 + (stepsize / 2) * || local - consensus + lagrange / stepsize ||_2^2.
+     * weight * [coefficients^T * local - constant]^2 + (stepsize / 2) * || local - consensus + lagrange / stepsize ||_2^2.
      *
      * The result of the minimization will be stored in the local variables.
      */
@@ -247,30 +243,6 @@ public class SquaredHyperplaneTerm extends ADMMObjectiveTerm {
     }
 
     // General Utilities
-
-    /**
-     * coefficients^T * x - constant
-     */
-    private float computeInnerPotential() {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * variables[i].getValue();
-        }
-
-        return value - constant;
-    }
-
-    /**
-     * coefficients^T * x - constant
-     */
-    private float computeInnerPotential(float[] consensusValues) {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
-        }
-
-        return value - constant;
-    }
 
     /**
      * Get the lower triangle if it already exists, compute and cache it otherwise.

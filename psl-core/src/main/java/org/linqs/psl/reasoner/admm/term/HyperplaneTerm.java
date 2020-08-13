@@ -39,13 +39,10 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
     /**
      * The specific type of term represented by this instance.
      */
-    public static enum TermType {
+    public static enum HyperplaneTermType {
         HingeLossTerm,
         LinearConstraintTerm
     }
-
-    protected final float[] coefficients;
-    protected final float constant;
 
     /**
      * When non-null, this term must be a hard constraint.
@@ -77,8 +74,6 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
     public HyperplaneTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane, FunctionComparator comparator) {
         super(hyperplane, groundRule);
 
-        coefficients = hyperplane.getCoefficients();
-        constant = hyperplane.getConstant();
         this.comparator = comparator;
 
         // If the hyperplane only has one random variable, we can take shortcuts solving it.
@@ -104,7 +99,7 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
 
     @Override
     public void minimize(float stepSize, float[] consensusValues) {
-        if (getTermType() == TermType.HingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.HingeLossTerm) {
             minimizeHingeLoss(stepSize, consensusValues);
         } else {
             minimizeConstraint(stepSize, consensusValues);
@@ -113,7 +108,7 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
 
     @Override
     public float evaluate() {
-        if (getTermType() == TermType.HingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.HingeLossTerm) {
             return evaluateHingeLoss();
         } else {
             return evaluateConstraint();
@@ -122,18 +117,18 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
 
     @Override
     public float evaluate(float[] consensusValues) {
-        if (getTermType() == TermType.HingeLossTerm) {
+        if (getHyperplaneTermType() == HyperplaneTermType.HingeLossTerm) {
             return evaluateHingeLoss(consensusValues);
         } else {
             return evaluateConstraint(consensusValues);
         }
     }
 
-    public TermType getTermType() {
+    public HyperplaneTermType getHyperplaneTermType() {
         if (comparator == null) {
-            return TermType.HingeLossTerm;
+            return HyperplaneTermType.HingeLossTerm;
         } else {
-            return TermType.LinearConstraintTerm;
+            return HyperplaneTermType.LinearConstraintTerm;
         }
     }
 
@@ -253,30 +248,6 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
     }
 
     // General Utilities
-
-    /**
-     * coefficients^T * local - constant
-     */
-    private float computeInnerPotential() {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * variables[i].getValue();
-        }
-
-        return value - constant;
-    }
-
-    /**
-     * coefficients^T * consensus - constant
-     */
-    private float computeInnerPotential(float[] consensusValues) {
-        float value = 0.0f;
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
-        }
-
-        return value - constant;
-    }
 
     /**
      * Project the solution to the consensus problem onto this hyperplane,

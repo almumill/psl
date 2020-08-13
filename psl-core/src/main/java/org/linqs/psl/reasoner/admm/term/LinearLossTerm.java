@@ -21,59 +21,9 @@ import org.linqs.psl.model.rule.GroundRule;
 import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.reasoner.term.Hyperplane;
 
-/**
- * ADMMReasoner objective term of the form <br />
- * weight * coefficients^T * x
- */
+// TODO(eriq): Deprecated.
 public class LinearLossTerm extends ADMMObjectiveTerm {
-    private final float[] coefficients;
-
-    /**
-     * Caller releases control of |variables| and |coefficients|.
-     */
-    LinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
+    public LinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
         super(hyperplane, groundRule);
-
-        this.coefficients = hyperplane.getCoefficients();
-    }
-
-    @Override
-    public void minimize(float stepSize, float[] consensusValues) {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        for (int i = 0; i < size; i++) {
-            LocalVariable variable = variables[i];
-
-            float value = consensusValues[variable.getGlobalId()] - variable.getLagrange() / stepSize;
-            value -= (weight * coefficients[i] / stepSize);
-
-            variable.setValue(value);
-        }
-    }
-
-    /**
-     * weight * coefficients^T * x
-     */
-    @Override
-    public float evaluate() {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        float value = 0.0f;
-
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * variables[i].getValue();
-        }
-
-        return weight * value;
-    }
-
-    @Override
-    public float evaluate(float[] consensusValues) {
-        float weight = (float)((WeightedGroundRule)groundRule).getWeight();
-        float value = 0.0f;
-
-        for (int i = 0; i < size; i++) {
-            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
-        }
-
-        return weight * value;
     }
 }

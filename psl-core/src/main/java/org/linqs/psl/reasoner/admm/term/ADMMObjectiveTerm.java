@@ -21,24 +21,66 @@ import org.linqs.psl.model.rule.GroundRule;
 import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.reasoner.term.Hyperplane;
 import org.linqs.psl.reasoner.term.ReasonerTerm;
+import org.linqs.psl.util.MathUtils;
 
 /**
- * A term in the objective to be optimized by an ADMMReasoner.
+ * Objective term for an ADMMReasoner.
+ *
+ * TEST(eriq): Fill in description when each class gets brought in.
+ * This general class covers three specific types of terms:
+ * 1) LinearLoss Terms: weight * coefficients^T * y
+ * 2) Hyperplane Terms:
+ * 3) Squared Hyperplane Terms:
+ * Where y can be either local or concensus values.
+ *
+ * Minimizing a term comes down to minizing the weighted potential plus a squared norm:
+ * weight * [max(0, coefficients^T * local - constant)]^power + (stepsize / 2) * || local - consensus + lagrange / stepsize ||_2^2.
+ *
+ * The reason these terms are housed in a single class instead of subclasses is for performance
+ * in streaming settings where terms must be quickly serialized and deserialized.
+ *
+ * All coefficients must be non-zero.
  */
-public abstract class ADMMObjectiveTerm implements ReasonerTerm {
+public class ADMMObjectiveTerm implements ReasonerTerm {
+    /**
+     * The specific type of term represented by this instance.
+     */
+    public static enum TermType {
+        LinearLossTerm,
+        HyperplaneTerm,
+        SquaredHyperplaneTerm
+    }
+
     // TODO(eriq): Remove the reference to a ground rule.
     protected final GroundRule groundRule;
+
     protected final float weight;
-    protected final LocalVariable[] variables;
     protected final int size;
 
+    protected final float[] coefficients;
+    protected final LocalVariable[] variables;
+
+    protected final float constant;
+
+    // TEST(eriq): Check constructor arg order.
+
+    public static ADMMObjectiveTerm createLinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
+        return new ADMMObjectiveTerm(hyperplane, groundRule);
+    }
+
     /**
-     * Caller releases control of the hyperplane and all members of it.
+     * Construct an ADMM objective term by taking ownership of the hyperplane and all members of it.
+     * The full constructor is made available, but callers should favor the static creation methods.
      */
     public ADMMObjectiveTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule) {
-        this.variables = hyperplane.getVariables();
-        this.size = hyperplane.size();
+        // TEST
         this.groundRule = groundRule;
+
+        this.size = hyperplane.size();
+
+        this.variables = hyperplane.getVariables();
+        this.coefficients = hyperplane.getCoefficients();
+        this.constant = hyperplane.getConstant();
 
         if (groundRule instanceof WeightedGroundRule) {
             this.weight = (float)((WeightedGroundRule)groundRule).getWeight();
@@ -55,23 +97,6 @@ public abstract class ADMMObjectiveTerm implements ReasonerTerm {
             variable.setLagrange(variable.getLagrange() + stepSize * (variable.getValue() - consensusValues[variable.getGlobalId()]));
         }
     }
-
-    /**
-     * Updates x to the solution of <br />
-     * argmin f(x) + stepSize / 2 * \|x - z + y / stepSize \|_2^2 <br />
-     * for the objective term f(x)
-     */
-    public abstract void minimize(float stepSize, float[] consensusValues);
-
-    /**
-     * Evaluate this potential using the local variables.
-     */
-    public abstract float evaluate();
-
-    /**
-     * Evaluate this potential using the given consensus values.
-     */
-    public abstract float evaluate(float[] consensusValues);
 
     /**
      * Get the variables used in this term.
@@ -91,5 +116,112 @@ public abstract class ADMMObjectiveTerm implements ReasonerTerm {
 
     public GroundRule getGroundRule() {
         return groundRule;
+    }
+
+    /**
+     * Get the specific type of term this instance represents.
+     */
+    public TermType getTermType() {
+        // TEST: Simplify when all are here.
+        if (!Float.isInfinite(weight) && MathUtils.isZero(constant)) {
+            return TermType.LinearLossTerm;
+        } else {
+            throw new RuntimeException("TEST");
+        }
+    }
+
+    /**
+     * Modify the local variables to minimize this term (within the bounds of the step size).
+     */
+    public void minimize(float stepSize, float[] consensusValues) {
+        TermType termType = getTermType();
+        if (termType == TermType.LinearLossTerm) {
+            minimizeLinearLoss(stepSize, consensusValues);
+        } else {
+            throw new RuntimeException("TEST");
+        }
+    }
+
+    /**
+     * Evaluate this potential using the local variables.
+     */
+    public float evaluate() {
+        TermType termType = getTermType();
+        if (termType == TermType.LinearLossTerm) {
+            return evaluateLinearLoss();
+        } else {
+            throw new RuntimeException("TEST");
+        }
+    }
+
+    /**
+     * Evaluate this potential using the given consensus values.
+     */
+    public float evaluate(float[] consensusValues) {
+        if (getTermType() == TermType.LinearLossTerm) {
+            return evaluateLinearLoss(consensusValues);
+        } else {
+            throw new RuntimeException("TEST");
+        }
+    }
+
+    // Functionality for linear loss terms.
+
+    private void minimizeLinearLoss(float stepSize, float[] consensusValues) {
+        // Linear losses can be directly minimized.
+
+        for (int i = 0; i < size; i++) {
+            LocalVariable variable = variables[i];
+
+            float value =
+                    consensusValues[variable.getGlobalId()]
+                    - variable.getLagrange() / stepSize
+                    - (weight * coefficients[i] / stepSize);
+
+            variable.setValue(value);
+        }
+    }
+
+    /**
+     * weight * coefficients^T * local
+     */
+    private float evaluateLinearLoss() {
+        return weight * computeInnerPotential();
+    }
+
+    /**
+     * weight * coefficients^T * consensus
+     */
+    private float evaluateLinearLoss(float[] consensusValues) {
+        return weight * computeInnerPotential(consensusValues);
+    }
+
+
+
+
+    // General Utilities
+
+    /**
+     * coefficients^T * local - constant
+     */
+    protected float computeInnerPotential() {
+        float value = 0.0f;
+        for (int i = 0; i < size; i++) {
+            value += coefficients[i] * variables[i].getValue();
+        }
+
+        return value - constant;
+    }
+
+    /**
+     * coefficients^T * consensus - constant
+     */
+    protected float computeInnerPotential(float[] consensusValues) {
+        float value = 0.0f;
+        for (int i = 0; i < size; i++) {
+            value += coefficients[i] * consensusValues[variables[i].getGlobalId()];
+        }
+
+        return value - constant;
     }
 }
