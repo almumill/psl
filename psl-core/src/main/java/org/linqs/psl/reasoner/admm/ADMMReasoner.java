@@ -23,7 +23,6 @@ import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.reasoner.Reasoner;
 import org.linqs.psl.reasoner.admm.term.ADMMObjectiveTerm;
 import org.linqs.psl.reasoner.admm.term.ADMMTermStore;
-import org.linqs.psl.reasoner.admm.term.LinearConstraintTerm;
 import org.linqs.psl.reasoner.admm.term.LocalVariable;
 import org.linqs.psl.reasoner.term.TermGenerator;
 import org.linqs.psl.reasoner.term.TermStore;
@@ -240,7 +239,7 @@ public class ADMMReasoner extends Reasoner {
         float[] consensusValues = termStore.getConsensusValues();
 
         for (ADMMObjectiveTerm term : termStore) {
-            if (term instanceof LinearConstraintTerm) {
+            if (term.isConstraint()) {
                 if (term.evaluate(consensusValues) > 0.0f) {
                     violatedConstraints++;
                 }

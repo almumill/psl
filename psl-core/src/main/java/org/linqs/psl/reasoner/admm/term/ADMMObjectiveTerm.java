@@ -96,13 +96,11 @@ public class ADMMObjectiveTerm implements ReasonerTerm {
      */
     private static Map<Integer, FloatMatrix> lowerTriangleCache = new HashMap<Integer, FloatMatrix>();
 
-    // TEST(eriq): Make constructor private?
-
     /**
      * Construct an ADMM objective term by taking ownership of the hyperplane and all members of it.
-     * The full constructor is made available, but callers should favor the static creation methods.
+     * Use the static creation methods.
      */
-    public ADMMObjectiveTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule,
+    private ADMMObjectiveTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule,
             boolean squared, boolean hinge,
             FunctionComparator comparator) {
         this.squared = squared;
@@ -126,6 +124,10 @@ public class ADMMObjectiveTerm implements ReasonerTerm {
         }
     }
 
+    public static ADMMObjectiveTerm createLinearConstraintTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule, FunctionComparator comparator) {
+        return new ADMMObjectiveTerm(hyperplane, groundRule, false, false, comparator);
+    }
+
     public static ADMMObjectiveTerm createLinearLossTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule) {
         return new ADMMObjectiveTerm(hyperplane, groundRule, false, false, null);
     }
@@ -134,11 +136,7 @@ public class ADMMObjectiveTerm implements ReasonerTerm {
         return new ADMMObjectiveTerm(hyperplane,groundRule, false, true, null);
     }
 
-    public static ADMMObjectiveTerm createLinearConstraintTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule, FunctionComparator comparator) {
-        return new ADMMObjectiveTerm(hyperplane, groundRule, false, false, comparator);
-    }
-
-    public static ADMMObjectiveTerm createSquaredLossTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule) {
+    public static ADMMObjectiveTerm createSquaredLinearLossTerm(Hyperplane<LocalVariable> hyperplane, GroundRule groundRule) {
         return new ADMMObjectiveTerm(hyperplane, groundRule, true, false, null);
     }
 
@@ -169,6 +167,10 @@ public class ADMMObjectiveTerm implements ReasonerTerm {
     @Override
     public int size() {
         return size;
+    }
+
+    public boolean isConstraint() {
+        return getTermType() == TermType.LinearConstraintTerm;
     }
 
     /**
