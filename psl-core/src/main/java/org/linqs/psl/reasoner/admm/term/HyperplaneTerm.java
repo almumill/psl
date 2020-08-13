@@ -81,23 +81,24 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
         constant = hyperplane.getConstant();
         this.comparator = comparator;
 
+        // If the hyperplane only has one random variable, we can take shortcuts solving it.
         if (size == 1) {
-            // If the hyperplane only has one random variable, we can take shortcuts solving it.
             consensusOptimizer = null;
             unitNormal = null;
-        } else {
-            consensusOptimizer = new float[size];
-            unitNormal = new float[size];
+            return;
+        }
 
-            float length = 0.0f;
-            for (int i = 0; i < size; i++) {
-                length += coefficients[i] * coefficients[i];
-            }
-            length = (float)Math.sqrt(length);
+        consensusOptimizer = new float[size];
+        unitNormal = new float[size];
 
-            for (int i = 0; i < size; i++) {
-                unitNormal[i] = coefficients[i] / length;
-            }
+        float length = 0.0f;
+        for (int i = 0; i < size; i++) {
+            length += coefficients[i] * coefficients[i];
+        }
+        length = (float)Math.sqrt(length);
+
+        for (int i = 0; i < size; i++) {
+            unitNormal[i] = coefficients[i] / length;
         }
     }
 
@@ -175,14 +176,14 @@ public class HyperplaneTerm extends ADMMObjectiveTerm {
     }
 
     /**
-     * weight * max(0.0, coefficients^T * x - constant)
+     * weight * max(0.0, coefficients^T * local - constant)
      */
     public float evaluateHingeLoss() {
         return weight * Math.max(0.0f, computeInnerPotential());
     }
 
     /**
-     * weight * max(0.0, coefficients^T * x - constant)
+     * weight * max(0.0, coefficients^T * consensus - constant)
      */
     public float evaluateHingeLoss(float[] consensusValues) {
         return weight * Math.max(0.0f, computeInnerPotential(consensusValues));

@@ -27,7 +27,7 @@ import org.linqs.psl.reasoner.term.Hyperplane;
  */
 public class SquaredHingeLossTerm extends SquaredHyperplaneTerm {
     public SquaredHingeLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
-        super(groundRule, hyperplane);
+        super(groundRule, hyperplane, true);
     }
 
     /**
