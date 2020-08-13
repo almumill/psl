@@ -24,6 +24,6 @@ import org.linqs.psl.reasoner.term.Hyperplane;
 // TODO(eriq): Deprecated.
 public class LinearLossTerm extends ADMMObjectiveTerm {
     public LinearLossTerm(GroundRule groundRule, Hyperplane<LocalVariable> hyperplane) {
-        super(hyperplane, groundRule);
+        super(hyperplane, groundRule, false, false, null);
     }
 }
