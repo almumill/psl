@@ -94,6 +94,63 @@ public abstract class EvaluatorTest<T extends Evaluator> {
         truthDB.close();
     }
 
+    /**
+     * Initialize a test setting where atoms have specified integer arguments.
+     */
+    protected void init(float[] predictions, float[] truth, int[][] predictionsArgs, int[][] truthArgs) {
+        cleanup();
+
+        dataStore = new RDBMSDataStore(new H2DatabaseDriver(
+                H2DatabaseDriver.Type.Memory, this.getClass().getName(), true));
+
+        int argCount = predictionsArgs[0].length;
+        ConstantType[] constantTypes = new ConstantType[argCount];
+
+        for (int i = 0; i < argCount; i++) {
+            constantTypes[i] = ConstantType.UniqueIntID;
+        }
+
+        // Create a test predicates with unique names which map
+        // to their argument count.
+        predicate = StandardPredicate.get(
+                "EvaulatorTestPredicate" + Integer.toString(argCount) + "Args",
+                constantTypes);
+
+        dataStore.registerPredicate(predicate);
+
+        Partition targetPartition = dataStore.getPartition("targets");
+        Partition truthPartition = dataStore.getPartition("truth");
+
+        Inserter inserter = dataStore.getInserter(predicate, targetPartition);
+        for (int atomIndex = 0; atomIndex < predictions.length; atomIndex++) {
+            UniqueIntID[] uniqueIntConstants = new UniqueIntID[argCount];
+            for (int argIndex = 0; argIndex < argCount; argIndex++) {
+                uniqueIntConstants[argIndex] = new UniqueIntID(predictionsArgs[atomIndex][argIndex]);
+            }
+            inserter.insertValue(predictions[atomIndex], uniqueIntConstants);
+        }
+
+        inserter = dataStore.getInserter(predicate, truthPartition);
+        for (int atomIndex = 0; atomIndex < truth.length; atomIndex++) {
+            UniqueIntID[] uniqueIntConstants = new UniqueIntID[argCount];
+            for (int argIndex = 0; argIndex < argCount; argIndex++) {
+                uniqueIntConstants[argIndex] = new UniqueIntID(truthArgs[atomIndex][argIndex]);
+            }
+            inserter.insertValue(truth[atomIndex], uniqueIntConstants);
+        }
+
+        // Redefine the truth database with no atoms in the write partition.
+        Database resultsDB = dataStore.getDatabase(targetPartition);
+        Database truthDB = dataStore.getDatabase(truthPartition, dataStore.getRegisteredPredicates());
+
+        PersistedAtomManager atomManager = new PersistedAtomManager(resultsDB);
+        trainingMap = new TrainingMap(atomManager, truthDB);
+
+        // Since we only need the map, we can close all the databases.
+        resultsDB.close();
+        truthDB.close();
+    }
+
     @After
     public void cleanup() {
         trainingMap = null;

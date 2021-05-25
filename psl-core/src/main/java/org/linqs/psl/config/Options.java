@@ -22,10 +22,11 @@ import org.linqs.psl.application.learning.weight.maxlikelihood.MaxLikelihoodMPE;
 import org.linqs.psl.application.learning.weight.search.bayesian.GaussianProcessKernel;
 import org.linqs.psl.database.rdbms.QueryRewriter;
 import org.linqs.psl.grounding.MemoryGroundRuleStore;
+import org.linqs.psl.evaluation.statistics.AUCEvaluator;
 import org.linqs.psl.evaluation.statistics.ContinuousEvaluator;
 import org.linqs.psl.evaluation.statistics.CategoricalEvaluator;
 import org.linqs.psl.evaluation.statistics.DiscreteEvaluator;
-import org.linqs.psl.evaluation.statistics.AUCEvaluator;
+import org.linqs.psl.evaluation.statistics.RankingEvaluator;
 import org.linqs.psl.reasoner.InitialValue;
 import org.linqs.psl.reasoner.admm.ADMMReasoner;
 import org.linqs.psl.reasoner.admm.term.ADMMTermStore;
@@ -163,6 +164,19 @@ public class Options {
         null
     );
 
+    public static final Option EVAL_AUC_REPRESENTATIVE = new Option(
+        "aucevaluator.representative",
+        AUCEvaluator.RepresentativeMetric.AUROC.toString(),
+        "The representative metric (see AUCEvaluator.RepresentativeMetric)."
+    );
+
+    public static final Option EVAL_AUC_THRESHOLD = new Option(
+        "aucevaluator.threshold",
+        0.5,
+        "The truth threshold.",
+        Option.FLAG_NON_NEGATIVE
+    );
+
     public static final Option EVAL_DISCRETE_REPRESENTATIVE = new Option(
         "discreteevaluator.representative",
         DiscreteEvaluator.RepresentativeMetric.F1.toString(),
@@ -200,6 +214,32 @@ public class Options {
         "eval.includeobs",
         false,
         "Include in evaluation observed target atoms that match against a truth atom."
+    );
+
+    public static final Option EVAL_RANK_CATEGORY_INDEXES = new Option(
+        "rankingevaluator.categoryindexes",
+        "1",
+        "The index (zero-indexed) of the argument in the predicate that indicate a category."
+        + " The other arguments will be treated as identifiers."
+    );
+
+    public static final Option EVAL_RANK_DEFAULT_PREDICATE = new Option(
+        "rankingevaluator.defaultpredicate",
+        null,
+        "The default predicate to use when none are supplied."
+    );
+
+        public static final Option EVAL_RANK_REPRESENTATIVE = new Option(
+        "rankingevaluator.representative",
+        RankingEvaluator.RepresentativeMetric.MRR.toString(),
+        "The representative metric (see RankingEvaluator.RepresentativeMetric)."
+    );
+
+    public static final Option EVAL_RANK_THRESHOLD = new Option(
+        "rankingevaluator.threshold",
+        0.5,
+        "The truth value threshold for ranking atoms.",
+        Option.FLAG_NON_NEGATIVE
     );
 
     public static final Option EXECUTABLE_CLEAN_INPUT = new Option(
@@ -596,19 +636,6 @@ public class Options {
         150,
         "The max number of locations to search.",
         Option.FLAG_POSITIVE
-    );
-
-    public static final Option EVAL_AUC_REPRESENTATIVE = new Option(
-        "aucevaluator.representative",
-        AUCEvaluator.RepresentativeMetric.AUROC.toString(),
-        "The representative metric (see AUCEvaluator.RepresentativeMetric)."
-    );
-
-    public static final Option EVAL_AUC_THRESHOLD = new Option(
-        "aucevaluator.threshold",
-        0.5,
-        "The truth threshold.",
-        Option.FLAG_NON_NEGATIVE
     );
 
     public static final Option WLA_RS_SCALING_FACTORS = new Option(
