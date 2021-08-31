@@ -42,4 +42,12 @@ public class ContinuousEvaluatorTest extends EvaluatorTest<ContinuousEvaluator> 
         computer.compute(trainingMap, predicate);
         assertEquals(0.24, computer.mse(), MathUtils.EPSILON);
     }
+
+    @Test
+    public void testSMAPE() {
+        ContinuousEvaluator computer = new ContinuousEvaluator();
+        computer.compute(trainingMap, predicate);
+        assertEquals(112.5, computer.smape(), MathUtils.EPSILON);
+    }
+
 }

@@ -31,7 +31,8 @@ import java.util.Map;
 public class ContinuousEvaluator extends Evaluator {
     public enum RepresentativeMetric {
         MAE,
-        MSE
+        MSE,
+	SMAPE
     }
 
     private RepresentativeMetric representative;
@@ -39,6 +40,9 @@ public class ContinuousEvaluator extends Evaluator {
     private int count;
     private double absoluteError;
     private double squaredError;
+
+    // This is symmetric mean absolute error
+    private double SMAerror;
 
     public ContinuousEvaluator() {
         this(Options.EVAL_CONT_REPRESENTATIVE.getString());
@@ -54,6 +58,7 @@ public class ContinuousEvaluator extends Evaluator {
         count = 0;
         absoluteError = 0.0;
         squaredError = 0.0;
+	SMAerror = 0.0;
     }
 
     @Override
@@ -67,6 +72,8 @@ public class ContinuousEvaluator extends Evaluator {
         absoluteError = 0.0;
         squaredError = 0.0;
 
+	SMAerror = 0.0;
+
         for (Map.Entry<GroundAtom, GroundAtom> entry : getMap(trainingMap)) {
             if (predicate != null && entry.getKey().getPredicate() != predicate) {
                 continue;
@@ -75,6 +82,8 @@ public class ContinuousEvaluator extends Evaluator {
             count++;
             absoluteError += Math.abs(entry.getValue().getValue() - entry.getKey().getValue());
             squaredError += Math.pow(entry.getValue().getValue() - entry.getKey().getValue(), 2);
+
+	    SMAerror += Math.abs(entry.getValue().getValue() - entry.getKey().getValue()) / ((entry.getValue().getValue() + entry.getKey().getValue()) / 2);
         }
     }
 
@@ -85,6 +94,8 @@ public class ContinuousEvaluator extends Evaluator {
                 return mae();
             case MSE:
                 return mse();
+	    case SMAPE:
+		return smape();
             default:
                 throw new IllegalStateException("Unknown representative metric: " + representative);
         }
@@ -95,6 +106,7 @@ public class ContinuousEvaluator extends Evaluator {
         switch (representative) {
             case MAE:
             case MSE:
+	    case SMAPE:
                 return 0.0;
             default:
                 throw new IllegalStateException("Unknown representative metric: " + representative);
@@ -120,6 +132,15 @@ public class ContinuousEvaluator extends Evaluator {
         }
 
         return squaredError / count;
+    }
+
+
+    public double smape() {
+        if (count == 0) {
+            return 0.0;
+        }
+
+        return 100 * (SMAerror / count);
     }
 
     @Override
