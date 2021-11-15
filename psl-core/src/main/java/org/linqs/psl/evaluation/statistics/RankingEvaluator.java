@@ -117,6 +117,7 @@ public class RankingEvaluator extends Evaluator {
         rankMap = new HashMap<GroundAtom, Integer>();
 
         int predicateArity = predicate.getArity();
+
         List<Integer> entityIndexes = new ArrayList<Integer>(predicateArity - categoryIndexes.size());
 
         for (int index = 0; index < predicateArity; index++) {
@@ -147,7 +148,7 @@ public class RankingEvaluator extends Evaluator {
         }
 
         // Sort these Lists and populate the rankMap.
-        for (ArrayList<Constant> entity : sortedAtoms.keySet()) {
+        for (List<Constant> entity : sortedAtoms.keySet()) {
             Collections.sort(sortedAtoms.get(entity));
             for (GroundAtom atom : sortedAtoms.get(entity)) {
                 rankMap.put(atom, sortedAtoms.get(entity).indexOf(atom) + 1);
