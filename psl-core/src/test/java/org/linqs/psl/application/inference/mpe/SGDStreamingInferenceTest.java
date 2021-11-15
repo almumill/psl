@@ -31,6 +31,8 @@ public class SGDStreamingInferenceTest extends InferenceTest {
     @After
     public void cleanup() {
         Options.SGD_LEARNING_RATE.clear();
+        Options.SGD_COORDINATE_STEP.clear();
+        Options.SGD_EXTENSION.clear();
     }
 
     @Override
@@ -46,7 +48,50 @@ public class SGDStreamingInferenceTest extends InferenceTest {
 
     @Override
     public void initialValueTest() {
-        Options.SGD_LEARNING_RATE.set(10.0);
+        // SGD Non-coordinate step.
+        Options.SGD_LEARNING_RATE.set(1.0);
+        Options.SGD_INVERSE_TIME_EXP.set(0.5);
+        Options.SGD_COORDINATE_STEP.set(false);
         super.initialValueTest();
+
+        // SGD Coordinate step.
+        Options.SGD_COORDINATE_STEP.set(true);
+        super.initialValueTest();
+
+        cleanup();
+
+        // Adam.
+        Options.SGD_EXTENSION.set("ADAM");
+        // Non-coordinate step.
+        Options.SGD_LEARNING_RATE.set(1.0);
+        Options.SGD_INVERSE_TIME_EXP.set(0.5);
+        Options.SGD_COORDINATE_STEP.set(false);
+        super.initialValueTest();
+
+        // Coordinate step.
+        Options.SGD_COORDINATE_STEP.set(true);
+        super.initialValueTest();
+
+        cleanup();
+
+        // AdaGrad.
+        Options.SGD_EXTENSION.set("ADAGRAD");
+        // Non-coordinate step.
+        Options.SGD_LEARNING_RATE.set(1.0);
+        Options.SGD_INVERSE_TIME_EXP.set(0.5);
+        Options.SGD_COORDINATE_STEP.set(false);
+        super.initialValueTest();
+
+        // Coordinate step.
+        Options.SGD_COORDINATE_STEP.set(true);
+        super.initialValueTest();
+    }
+
+    @Override
+    public void testSimplexConstraints() {
+        Options.SGD_LEARNING_RATE.set(1.0);
+        Options.SGD_INVERSE_TIME_EXP.set(2.0);
+        Options.SGD_COORDINATE_STEP.set(false);
+        super.testSimplexConstraints();
     }
 }

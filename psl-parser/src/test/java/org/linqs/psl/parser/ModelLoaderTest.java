@@ -21,43 +21,19 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 import org.linqs.psl.PSLTest;
-import org.linqs.psl.database.DataStore;
-import org.linqs.psl.database.rdbms.RDBMSDataStore;
-import org.linqs.psl.database.rdbms.driver.H2DatabaseDriver;
-import org.linqs.psl.database.rdbms.driver.H2DatabaseDriver.Type;
 import org.linqs.psl.model.atom.QueryAtom;
-import org.linqs.psl.model.predicate.StandardPredicate;
 import org.linqs.psl.model.rule.Rule;
 import org.linqs.psl.model.rule.arithmetic.WeightedArithmeticRule;
 import org.linqs.psl.model.rule.arithmetic.expression.SummationAtom;
 import org.linqs.psl.model.rule.arithmetic.expression.SummationAtomOrAtom;
-import org.linqs.psl.model.term.ConstantType;
 import org.linqs.psl.util.ListUtils;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class ModelLoaderTest {
-    private DataStore dataStore;
-
-    private StandardPredicate singlePredicate;
-    private StandardPredicate doublePredicate;
-
-    @Before
-    public void setup() {
-        dataStore = new RDBMSDataStore(new H2DatabaseDriver(Type.Memory, this.getClass().getName(), true));
-
-        singlePredicate = StandardPredicate.get("Single", ConstantType.UniqueStringID);
-        dataStore.registerPredicate(singlePredicate);
-
-        doublePredicate = StandardPredicate.get("Double", ConstantType.UniqueStringID, ConstantType.UniqueStringID);
-        dataStore.registerPredicate(doublePredicate);
-    }
-
+public class ModelLoaderTest extends LoaderTest{
     @Test
     public void testBase() {
         String input =
@@ -906,7 +882,7 @@ public class ModelLoaderTest {
     // QueryAtoms and SummationAtoms.
     @Test
     public void testArithmeticSummationAtom() {
-        // QueryAtom
+        // GetAtom
         String input = "1.0: Double(A, B) <= 1.0 ^2";
         List<Rule> rules = PSLTest.getRules(input);
 
@@ -993,6 +969,28 @@ public class ModelLoaderTest {
             "1.0: ( SINGLE('`~!@#$%^&*()-_=+') & DOUBLE(Z, B) ) >> SINGLE(B) ^2",
             "1.0: ( SINGLE('{[}]|;:') & DOUBLE(Z, B) ) >> SINGLE(B) ^2",
             "1.0: ( SINGLE('<,>.?/') & DOUBLE(Z, B) ) >> SINGLE(B) ^2",
+        };
+
+        PSLTest.assertModel(input, expected);
+    }
+
+    @Test
+    public void testArithmeticGroundingOnlyPredicates() {
+        String input =
+            "Single(A) + Single(B) + (A == B) = 0.0 .\n" +
+            "Single(A) + Single(B) + (A != B) = 0.0 .\n" +
+            "Single(A) + Single(B) + (A ~= B) = 0.0 .\n" +
+            "Single(A) + Single(B) + (A - B) = 0.0 .\n" +
+            "Single(A) + Single(B) + (A % B) = 0.0 .\n" +
+            "Single(A) + Single(B) + (A ^ B) = 0.0 .\n" +
+            "";
+        String[] expected = new String[]{
+            "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A == B) = 0.0 .",
+            "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A != B) = 0.0 .",
+            // "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A != B) = 0.0 .",  // Duplicate rule ignored.
+            // "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A != B) = 0.0 .",  // Duplicate rule ignored.
+            "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A % B) = 0.0 .",
+            // "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A % B) = 0.0 .",  // Duplicate rule ignored.
         };
 
         PSLTest.assertModel(input, expected);

@@ -21,6 +21,7 @@ import org.linqs.psl.model.atom.Atom;
 import org.linqs.psl.model.term.ConstantType;
 import org.linqs.psl.model.term.Term;
 
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,7 +32,7 @@ import java.util.Map;
  * Predicates cannot be constructed directly.
  * Instead, they are constructed via the appropriate gegetthod in each subclass.
  */
-public abstract class Predicate {
+public abstract class Predicate implements Serializable {
     private static Map<String, Predicate> predicates = new HashMap<String, Predicate>();
 
     private final String name;
@@ -89,6 +90,14 @@ public abstract class Predicate {
      */
     public ConstantType getArgumentType(int position) {
         return types[position];
+    }
+
+    /**
+     * Close the predicate and free related resrouces.
+     * It will be very rare to call this method.
+     * Most predicates stay alive for the duration of PSL's run.
+     */
+    public void close() {
     }
 
     @Override

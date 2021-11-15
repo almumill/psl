@@ -19,6 +19,7 @@ package org.linqs.psl.cli;
 
 import org.linqs.psl.application.inference.InferenceApplication;
 import org.linqs.psl.application.learning.weight.WeightLearningApplication;
+import org.linqs.psl.config.Options;
 import org.linqs.psl.database.DataStore;
 import org.linqs.psl.database.Database;
 import org.linqs.psl.database.Partition;
@@ -37,6 +38,7 @@ import org.linqs.psl.model.rule.UnweightedGroundRule;
 import org.linqs.psl.model.rule.WeightedGroundRule;
 import org.linqs.psl.parser.ModelLoader;
 import org.linqs.psl.parser.CommandLineLoader;
+import org.linqs.psl.util.FileUtils;
 import org.linqs.psl.util.Reflection;
 import org.linqs.psl.util.StringUtils;
 import org.linqs.psl.util.Version;
@@ -47,14 +49,13 @@ import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.List;
-
 import java.util.Set;
 
 /**
@@ -126,16 +127,12 @@ public class Launcher {
             return;
         }
 
-        PrintStream stream = System.out;
-        boolean closeStream = false;
+        PrintWriter out = new PrintWriter(System.out);
+        boolean closeOut = false;
 
         if (path != null) {
-            try {
-                stream = new PrintStream(path);
-                closeStream = true;
-            } catch (IOException ex) {
-                log.error(String.format("Unable to open file (%s) for ground rules, using stdout instead.", path), ex);
-            }
+            out = new PrintWriter(FileUtils.getBufferedWriter(path));
+            closeOut = true;
         }
 
         // Write a header.
@@ -143,7 +140,7 @@ public class Launcher {
         if (includeSatisfaction) {
             header = StringUtils.join("\t", header, "Satisfaction");
         }
-        stream.println(header);
+        out.println(header);
 
         for (GroundRule groundRule : groundRuleStore.getGroundRules()) {
             String row = "";
@@ -164,11 +161,11 @@ public class Launcher {
                 row = StringUtils.join("\t", row, "" + satisfaction);
             }
 
-            stream.println(row);
+            out.println(row);
         }
 
-        if (closeStream) {
-            stream.close();
+        if (closeOut) {
+            out.close();
         }
     }
 
@@ -176,13 +173,17 @@ public class Launcher {
      * Run inference.
      * The caller is responsible for closing the database.
      */
-    private Database runInference(Model model, DataStore dataStore, Set<StandardPredicate> closedPredicates, String inferenceName) {
+    private Database runInference(Model model, DataStore dataStore,
+            Set<StandardPredicate> closedPredicates, String inferenceName,
+            List<Evaluator> evaluators) {
         log.info("Starting inference with class: {}", inferenceName);
 
         // Create database.
         Partition targetPartition = dataStore.getPartition(PARTITION_NAME_TARGET);
         Partition observationsPartition = dataStore.getPartition(PARTITION_NAME_OBSERVATIONS);
+        Partition truthPartition = dataStore.getPartition(PARTITION_NAME_LABELS);
         Database database = dataStore.getDatabase(targetPartition, closedPredicates, observationsPartition);
+        Database truthDatabase = null;
 
         InferenceApplication inferenceApplication =
                 InferenceApplication.getInferenceApplication(inferenceName, model.getRules(), database);
@@ -194,7 +195,16 @@ public class Launcher {
 
         boolean commitAtoms = !parsedOptions.hasOption(CommandLineLoader.OPTION_SKIP_ATOM_COMMIT_LONG);
 
-        inferenceApplication.inference(commitAtoms, false);
+        // If we are going to evaluate during inference, we need to construct the truth database.
+        if (Options.REASONER_EVALUATE.getBoolean()) {
+            truthDatabase = dataStore.getDatabase(truthPartition, dataStore.getRegisteredPredicates());
+        }
+
+        inferenceApplication.inference(commitAtoms, false, evaluators, truthDatabase);
+
+        if (truthDatabase != null) {
+            truthDatabase.close();
+        }
 
         if (parsedOptions.hasOption(CommandLineLoader.OPTION_OUTPUT_SATISFACTION_LONG)) {
             String path = parsedOptions.getOptionValue(CommandLineLoader.OPTION_OUTPUT_SATISFACTION_LONG);
@@ -235,13 +245,12 @@ public class Launcher {
             outputGroundRules(learner.getInferenceApplication().getGroundRuleStore(), path, false);
         }
 
-        learner.close();
-
         if (parsedOptions.hasOption(CommandLineLoader.OPTION_OUTPUT_SATISFACTION_LONG)) {
             String path = parsedOptions.getOptionValue(CommandLineLoader.OPTION_OUTPUT_SATISFACTION_LONG);
             outputGroundRules(learner.getInferenceApplication().getGroundRuleStore(), path, true);
         }
 
+        learner.close();
         randomVariableDatabase.close();
         observedTruthDatabase.close();
 
@@ -263,20 +272,20 @@ public class Launcher {
         // Remove excess parens.
         outModel = outModel.replaceAll("\\( | \\)", "");
 
-        try (FileWriter learnedFileWriter = new FileWriter(new File(learnedFilename))) {
+        try (BufferedWriter learnedFileWriter = FileUtils.getBufferedWriter(learnedFilename)) {
             learnedFileWriter.write(outModel);
         } catch (IOException ex) {
-            log.error("Failed to write learned model:\n" + outModel);
+            log.error("Failed to write learned model:" + System.lineSeparator() + outModel);
             throw new RuntimeException("Failed to write learned model to: " + learnedFilename, ex);
         }
     }
 
     /**
      * Run eval.
-     * @param predictionDatabase can be passed in to speed up evaluation. If null, one will be created and closed internally.
      */
-    private void evaluation(DataStore dataStore, Database predictionDatabase, Set<StandardPredicate> closedPredicates, String evalClassName) {
-        log.info("Starting evaluation with class: {}.", evalClassName);
+    private void evaluation(DataStore dataStore, Database predictionDatabase, Set<StandardPredicate> closedPredicates,
+            List<Evaluator> evaluators) {
+        log.info("Starting evaluation.");
 
         // Set of open predicates
         Set<StandardPredicate> openPredicates = dataStore.getRegisteredPredicates();
@@ -295,23 +304,27 @@ public class Launcher {
 
         Database truthDatabase = dataStore.getDatabase(truthPartition, dataStore.getRegisteredPredicates());
 
-        Evaluator evaluator = (Evaluator)Reflection.newObject(evalClassName);
+        for (Evaluator evaluator : evaluators) {
+            log.debug("Starting evaluation with class: {}.", evaluator.getClass());
 
-        for (StandardPredicate targetPredicate : openPredicates) {
-            // Before we run evaluation, ensure that the truth database actually has instances of the target predicate.
-            if (truthDatabase.countAllGroundAtoms(targetPredicate) == 0) {
-                log.info("Skipping evaluation for {} since there are no ground truth atoms", targetPredicate);
-                continue;
+            for (StandardPredicate targetPredicate : openPredicates) {
+                // Before we run evaluation, ensure that the truth database actually has instances of the target predicate.
+                if (truthDatabase.countAllGroundAtoms(targetPredicate) == 0) {
+                    log.debug("Skipping evaluation for {} since there are no ground truth atoms", targetPredicate);
+                    continue;
+                }
+
+                evaluator.compute(predictionDatabase, truthDatabase, targetPredicate, !closePredictionDB);
+                log.info("Evaluation results for {} -- {}", targetPredicate.getName(), evaluator.getAllStats());
             }
-
-            evaluator.compute(predictionDatabase, truthDatabase, targetPredicate, !closePredictionDB);
-            log.info("Evaluation results for {} -- {}", targetPredicate.getName(), evaluator.getAllStats());
         }
 
         if (closePredictionDB) {
             predictionDatabase.close();
         }
         truthDatabase.close();
+
+        log.info("Evaluation complete.");
     }
 
     private Model loadModel() {
@@ -319,7 +332,7 @@ public class Launcher {
 
         Model model = null;
 
-        try (FileReader reader = new FileReader(new File(parsedOptions.getOptionValue(CommandLineLoader.OPTION_MODEL)))) {
+        try (BufferedReader reader = FileUtils.getBufferedReader(parsedOptions.getOptionValue(CommandLineLoader.OPTION_MODEL))) {
             model = ModelLoader.load(reader);
         } catch (IOException ex) {
             throw new RuntimeException("Failed to load model from file: " + parsedOptions.getOptionValue(CommandLineLoader.OPTION_MODEL), ex);
@@ -345,10 +358,21 @@ public class Launcher {
         // Load model
         Model model = loadModel();
 
+        // Initialize evaluators.
+        List<Evaluator> evaluators = null;
+        if (parsedOptions.hasOption(CommandLineLoader.OPTION_EVAL)) {
+            evaluators = new ArrayList<Evaluator>();
+            for (String evalClassName : parsedOptions.getOptionValues(CommandLineLoader.OPTION_EVAL)) {
+                evaluators.add((Evaluator)Reflection.newObject(evalClassName));
+            }
+        }
+
         // Inference
         Database evalDB = null;
         if (parsedOptions.hasOption(CommandLineLoader.OPERATION_INFER)) {
-            evalDB = runInference(model, dataStore, closedPredicates, parsedOptions.getOptionValue(CommandLineLoader.OPERATION_INFER, CommandLineLoader.DEFAULT_IA));
+            evalDB = runInference(model, dataStore, closedPredicates,
+                    parsedOptions.getOptionValue(CommandLineLoader.OPERATION_INFER, CommandLineLoader.DEFAULT_IA),
+                    evaluators);
         } else if (parsedOptions.hasOption(CommandLineLoader.OPERATION_LEARN)) {
             learnWeights(model, dataStore, closedPredicates, parsedOptions.getOptionValue(CommandLineLoader.OPERATION_LEARN, CommandLineLoader.DEFAULT_WLA));
         } else {
@@ -356,12 +380,8 @@ public class Launcher {
         }
 
         // Evaluation
-        if (parsedOptions.hasOption(CommandLineLoader.OPTION_EVAL)) {
-            for (String evaluator : parsedOptions.getOptionValues(CommandLineLoader.OPTION_EVAL)) {
-                evaluation(dataStore, evalDB, closedPredicates, evaluator);
-            }
-
-            log.info("Evaluation complete.");
+        if (evaluators != null) {
+            evaluation(dataStore, evalDB, closedPredicates, evaluators);
         }
 
         if (evalDB != null) {
@@ -410,7 +430,7 @@ public class Launcher {
             CommandLineLoader commandLineLoader = new CommandLineLoader(args);
             CommandLine givenOptions = commandLineLoader.getParsedOptions();
             // Return for command line parse errors or PSL errors.
-            if (( givenOptions == null) || (!(isCommandLineValid(givenOptions)))) {
+            if ((givenOptions == null) || (!(isCommandLineValid(givenOptions)))) {
                 return;
             }
             Launcher pslLauncher = new Launcher(givenOptions);

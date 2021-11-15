@@ -74,14 +74,14 @@ public abstract class AbstractArithmeticRule extends AbstractRule {
     protected final Map<SummationVariable, Formula> filters;
 
     /**
-     * A key to store per-rule threading grounding resource under.
+     * A key to store per-rule threading grounding resources under.
      */
     private final String groundingResourcesKey;
 
     private volatile boolean validatedByAtomManager;
 
     public AbstractArithmeticRule(ArithmeticRuleExpression expression, Map<SummationVariable, Formula> filterClauses, String name) {
-        super(name);
+        super(name, expression.hashCode());
         this.expression = expression;
         this.filters = filterClauses;
 
@@ -192,11 +192,6 @@ public abstract class AbstractArithmeticRule extends AbstractRule {
         }
 
         return predicates;
-    }
-
-    @Override
-    public int hashCode() {
-        return expression.hashCode();
     }
 
     @Override
@@ -342,6 +337,9 @@ public abstract class AbstractArithmeticRule extends AbstractRule {
         for (int atomIndex = 0; atomIndex < resources.groundAtoms.length; atomIndex++) {
             GroundAtom atom = resources.queryAtoms.get(atomIndex).ground(
                     atomManager, queryRow, variableMap, resources.argumentBuffer[atomIndex]);
+            if (atom == null) {
+                return;
+            }
 
             resources.groundAtoms[atomIndex] = atom;
 
@@ -541,6 +539,10 @@ public abstract class AbstractArithmeticRule extends AbstractRule {
             }
 
             GroundAtom groundAtom = atom.ground(atomManager, queryRow, variableMap);
+            if (groundAtom == null) {
+                return false;
+            }
+
             return groundAtom.getValue() > 0.0f;
         } else if (filter instanceof Negation) {
             return !evalFilter(
@@ -709,13 +711,8 @@ public abstract class AbstractArithmeticRule extends AbstractRule {
         // Then, we can use those replacements in the flat expression.
         Formula queryFormula = expression.getQueryFormula();
 
-        // In the query, ignore the summation variables (since we already queried for those).
-        Set<Variable> ignoreVariables = new HashSet<Variable>();
-        for (SummationVariable summationVariable : expression.getSummationMapping().keySet()) {
-            ignoreVariables.add(summationVariable.getVariable());
-        }
-
         // The distinct here is unfortunate, but we need it since we are ignoring the summation variables.
+        // Note that ArithmeticRuleExpression.getVariables() does not return SummationVariables.
         Formula2SQL sqler = new Formula2SQL(expression.getVariables(), database, true);
         SelectQuery query = sqler.getQuery(queryFormula);
 

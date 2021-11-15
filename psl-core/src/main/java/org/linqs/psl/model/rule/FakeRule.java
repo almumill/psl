@@ -27,12 +27,16 @@ import org.linqs.psl.model.term.Variable;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * All instances of fake rules have the same default hashcode: 0.
+ * Two fake rules are equal if they have the same squared variable value.
+ */
 public class FakeRule extends AbstractRule implements WeightedRule {
     protected float weight;
     protected boolean squared;
 
     public FakeRule(float weight, boolean squared) {
-        super("fake");
+        super("fake", 0);
 
         this.weight = weight;
         this.squared = squared;
@@ -108,6 +112,6 @@ public class FakeRule extends AbstractRule implements WeightedRule {
             return false;
         }
 
-        return super.equals(other);
+        return true;
     }
 }

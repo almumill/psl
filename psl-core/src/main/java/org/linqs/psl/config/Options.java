@@ -31,6 +31,7 @@ import org.linqs.psl.reasoner.InitialValue;
 import org.linqs.psl.reasoner.admm.ADMMReasoner;
 import org.linqs.psl.reasoner.admm.term.ADMMTermStore;
 import org.linqs.psl.reasoner.admm.term.ADMMTermGenerator;
+import org.linqs.psl.reasoner.sgd.SGDReasoner;
 import org.linqs.psl.util.SystemUtils;
 
 import org.json.JSONArray;
@@ -114,9 +115,11 @@ public class Options {
 
     public static final Option EVAL_CAT_CATEGORY_INDEXES = new Option(
         "categoricalevaluator.categoryindexes",
-        "1",
-        "The indexes (zero-indexed) of arguments in the predicate that indicate a category."
+        "-1",
+        "The indexes (zero-indexed, " + CategoricalEvaluator.DELIM + " separated)"
+        + " of arguments in the predicate that indicate a category."
         + " The other arguments will be treated as identifiers."
+        + " Negative indexes are accepted, with -1 referring to the last element."
     );
 
     public static final Option EVAL_CAT_DEFAULT_PREDICATE = new Option(
@@ -385,8 +388,39 @@ public class Options {
     public static final Option WLA_HB_SURVIVAL = new Option(
         "hyperband.survival",
         4,
-        "The proportion of configs that survive each round in a brancket.",
+        "The proportion of configs that survive each round in a bracket.",
         Option.FLAG_POSITIVE
+    );
+
+    public static final Option HYPERPLANE_TG_ADD_DETER = new Option(
+        "hyperplanetermgenerator.deter",
+        false,
+        "If true, then add a deter term to functional constraints."
+    );
+
+    public static final Option HYPERPLANE_TG_DETER_COLLECTIVE = new Option(
+        "hyperplanetermgenerator.deter.collective",
+        true,
+        "If true, then use collective deter terms. Else, use independent deter terms."
+    );
+
+    public static final Option HYPERPLANE_TG_DETER_CONSTANT = new Option(
+        "hyperplanetermgenerator.deter.constant",
+        0.0f,
+        "When used with independent deter terms, this is the point to deter away from."
+        + " When zero, this value will be (1.0 / |values|)."
+    );
+
+    public static final Option HYPERPLANE_TG_DETER_EPSILON = new Option(
+        "hyperplanetermgenerator.deter.epsilon",
+        0.05f,
+        "If the average distance of deter variables is less than this, then the deter rule will activate."
+    );
+
+    public static final Option HYPERPLANE_TG_DETER_WEIGHT = new Option(
+        "hyperplanetermgenerator.deter.weight",
+        1.0f,
+        "The weight for deter rules."
     );
 
     public static final Option HYPERPLANE_TG_INVERT_NEGATIVE_WEIGHTS = new Option(
@@ -407,16 +441,16 @@ public class Options {
         "The starting value for atoms and any local variables during inference."
     );
 
-    public static final Option INFERENCE_REASONER = new Option(
-        "inference.reasoner",
-        ADMMReasoner.class.getName(),
-        "The reasoner to use for inference."
-    );
-
     public static final Option INFERENCE_NORMALIZE_WEIGHTS = new Option(
         "inference.normalize",
         true,
         "Normalize weights to be in [0, 1]. Normalization will be done by dividing all weights by the largest weight."
+    );
+
+    public static final Option INFERENCE_REASONER = new Option(
+        "inference.reasoner",
+        ADMMReasoner.class.getName(),
+        "The reasoner to use for inference."
     );
 
     public static final Option INFERENCE_RELAX = new Option(
@@ -434,8 +468,15 @@ public class Options {
 
     public static final Option INFERENCE_RELAX_SQUARED = new Option(
         "inference.relax.squared",
-        true,
+        false,
         "When relaxing a hard constraint into a soft one, this determines if the resulting weighted rule is squared."
+    );
+
+    public static final Option INFERENCE_SKIP_INFERENCE = new Option(
+        "inference.skip",
+        false,
+        "Skip the reasoning portion of inference."
+        + " Variables will be set to their specified initial values, but no reasoning will take place."
     );
 
     public static final Option INFERENCE_TG = new Option(
@@ -507,7 +548,7 @@ public class Options {
     public static final Option MODEL_PREDICATE_BATCH_SIZE = new Option(
         "modelpredicate.batchsize",
         32,
-        "The size of batches for model updates.",
+        "The maximum size of batches for model updates.",
         Option.FLAG_POSITIVE
     );
 
@@ -528,6 +569,39 @@ public class Options {
         "modelpredicate.labelargs",
         "1",
         "A comma separated list of indexes to the predicate arguments that identity the target label (as opposed to the identity of the data point)."
+    );
+
+    public static final Option MODEL_PREDICATE_INITIAL_BATCH_SIZE = new Option(
+        "modelpredicate.initialbatchsize",
+        32,
+        "The maximum size of batches for the initial fitting of model predicates.",
+        Option.FLAG_POSITIVE
+    );
+
+    public static final Option MODEL_PREDICATE_INITIAL_ITERATIONS = new Option(
+        "modelpredicate.initialiterations",
+        100,
+        "The number of iterations for the internal model to go through for initial fitting.",
+        Option.FLAG_POSITIVE
+    );
+
+    public static final Option ONLINE_HOST = new Option(
+            "inference.onlinehostname",
+            "127.0.0.1",
+            "The hostname for the online server."
+    );
+
+    public static final Option ONLINE_PORT_NUMBER = new Option(
+            "inference.onlineportnumber",
+            56734,
+            "The port number for the online server."
+    );
+
+    public static final Option ONLINE_READ_PARTITION = new Option(
+            "onlineatommanager.read",
+            -1,
+            "The partition to add new observations to."
+            + " If negative, the first read partition in the database will be used."
     );
 
     public static final Option WLA_PDL_ADMM_STEPS = new Option(
@@ -651,6 +725,30 @@ public class Options {
         Option.FLAG_NON_NEGATIVE
     );
 
+    public static final Option REASONER_NONCONVEX = new Option(
+        "reasoner.nonconvex",
+        false,
+        "Allow non-convex optimization."
+    );
+
+    public static final Option REASONER_NONCONVEX_PERIOD = new Option(
+        "reasoner.nonconvex.period",
+        10,
+        "Do non-convex optimization once for each period."
+    );
+
+    public static final Option REASONER_NONCONVEX_ROUNDS = new Option(
+        "reasoner.nonconvex.rounds",
+        1,
+        "When initiated, do this many rounds of non-convex optimization."
+    );
+
+    public static final Option REASONER_EVALUATE = new Option(
+        "reasoner.evaluate",
+        false,
+        "If true, run the suite of evaluators specified for the post-inference evaluation stage at regular intervals during inference."
+    );
+
     public static final Option REASONER_OBJECTIVE_BREAK = new Option(
         "reasoner.objectivebreak",
         true,
@@ -666,7 +764,7 @@ public class Options {
     public static final Option REASONER_TOLERANCE = new Option(
         "reasoner.tolerance",
         1e-5f,
-        "How close towo objective values need to be to be considered the same.",
+        "How close two objective values need to be to be considered the same.",
         Option.FLAG_NON_NEGATIVE
     );
 
@@ -695,11 +793,59 @@ public class Options {
         "The alpha parameter for the dirichlet distribution of the weight sampler."
     );
 
+    public static final Option SGD_ADAM_BETA_1 = new Option(
+        "sgd.adambeta1",
+        0.9f,
+        "The beta1 parameter for Adam optimization."
+        + " This parameter controls the exponential decay rate of the first moment estimate. "
+        + " See paper for details: https://arxiv.org/pdf/1412.6980.pdf"
+    );
+
+    public static final Option SGD_ADAM_BETA_2 = new Option(
+        "sgd.adambeta2",
+        0.999f,
+        "The beta2 parameter for Adam optimization."
+        + " This parameter controls the exponential decay rate of the second moment estimate. "
+        + " See paper for details: https://arxiv.org/pdf/1412.6980.pdf"
+    );
+
+    public static final Option SGD_COORDINATE_STEP = new Option(
+        "sgd.coordinatestep",
+        false,
+        "Take coordinate steps during sgd."
+    );
+
+    public static final Option SGD_EXTENSION = new Option(
+        "sgd.extension",
+        SGDReasoner.SGDExtension.NONE.toString(),
+        "The SGD extension to use for SGD reasoning."
+        + " NONE (Default): The standard SGD optimizer takes steps in the direction of the negative gradient scaled by the learning rate."
+        + " ADAGRAD: Update the learning rate using the Adaptive Gradient (AdaGrad) algorithm."
+        + " ADAM: Update the learning rate using the Adaptive Moment Estimation (Adam) algorithm."
+    );
+
+    public static final Option SGD_INVERSE_TIME_EXP = new Option(
+        "sgd.inversescaleexp",
+        1.0f,
+        "If SGD is using the STEPDECAY learning schedule, then this value is the negative"
+        + " exponent of the iteration count which scales the gradient step using:"
+        + " (learning_rate / ( iteration ^ - SGD_INVERSE_TIME_EXP)).",
+        Option.FLAG_POSITIVE
+    );
+
     public static final Option SGD_LEARNING_RATE = new Option(
         "sgd.learningrate",
         1.0f,
         null,
         Option.FLAG_POSITIVE
+    );
+
+    public static final Option SGD_LEARNING_SCHEDULE = new Option(
+        "sgd.learningschedule",
+        SGDReasoner.SGDLearningSchedule.STEPDECAY.toString(),
+        "The learning schedule of the SGD inference reasoner changes the learning rate during learning."
+        + " STEPDECAY (Default): Decay the learning rate like: learningRate / (n_epoch^p) where p is set by sgd.inversescaleexp."
+        + " CONSTANT: The learning rate is constant during learning."
     );
 
     public static final Option SGD_MAX_ITER = new Option(

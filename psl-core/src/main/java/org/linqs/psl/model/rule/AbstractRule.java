@@ -25,22 +25,69 @@ import java.util.Map;
  * Base class for all (first order, i.e., not ground) rules.
  */
 public abstract class AbstractRule implements Rule {
-    private static Map<Integer, AbstractRule> rules = new HashMap<Integer, AbstractRule>();
+    private static final Map<Integer, Rule> rules = new HashMap<Integer, Rule>();
 
-    protected final String name;
+    protected String name;
+    protected int hashcode;
 
-    public static AbstractRule getRule(int hashcode) {
+    public static Rule getRule(int hashcode) {
         return rules.get(hashcode);
     }
 
-    public AbstractRule(String name) {
+    /**
+     * This default constructor only initializes name and hashcode to their empty values.
+     * The caller of this constructor is responsible for initializing the name and hashcode of the object
+     * and ensuring that the rule is registered.
+     */
+    protected AbstractRule() {
+        this.name = null;
+        this.hashcode = 0;
+    }
+
+    protected AbstractRule(String name, int hashcode) {
         this.name = name;
-        rules.put(System.identityHashCode(this), this);
+        this.hashcode = hashcode;
+
+        ensureRegistration();
     }
 
     public String getName() {
         return this.name;
     }
+
+    private static void registerRule(Rule rule) {
+        rules.put(rule.hashCode(), rule);
+    }
+
+    private static void unregisterRule(Rule rule) {
+        rules.remove(rule.hashCode());
+    }
+
+    @Override
+    public boolean isRegistered() {
+        return rules.containsKey(this.hashcode);
+    }
+
+    @Override
+    public void ensureRegistration() {
+        if (!isRegistered()) {
+            registerRule(this);
+        }
+    }
+
+    @Override
+    public void unregister() {
+        if (isRegistered()) {
+            unregisterRule(this);
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return hashcode;
+    }
+
+    public abstract boolean equals(Object other);
 
     @Override
     public boolean requiresSplit() {

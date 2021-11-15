@@ -25,6 +25,8 @@ import org.linqs.psl.config.Options;
 import org.linqs.psl.database.Database;
 import org.linqs.psl.database.DatabaseTestUtil;
 import org.linqs.psl.database.rdbms.driver.DatabaseDriver;
+import org.linqs.psl.evaluation.statistics.ContinuousEvaluator;
+import org.linqs.psl.evaluation.statistics.Evaluator;
 import org.linqs.psl.model.Model;
 import org.linqs.psl.model.atom.QueryAtom;
 import org.linqs.psl.model.atom.RandomVariableAtom;
@@ -32,9 +34,13 @@ import org.linqs.psl.model.formula.Conjunction;
 import org.linqs.psl.model.formula.Implication;
 import org.linqs.psl.model.predicate.StandardPredicate;
 import org.linqs.psl.model.rule.Rule;
+import org.linqs.psl.model.rule.arithmetic.UnweightedArithmeticRule;
 import org.linqs.psl.model.rule.arithmetic.WeightedArithmeticRule;
 import org.linqs.psl.model.rule.arithmetic.expression.ArithmeticRuleExpression;
+import org.linqs.psl.model.rule.arithmetic.expression.SummationAtom;
 import org.linqs.psl.model.rule.arithmetic.expression.SummationAtomOrAtom;
+import org.linqs.psl.model.rule.arithmetic.expression.SummationVariable;
+import org.linqs.psl.model.rule.arithmetic.expression.SummationVariableOrTerm;
 import org.linqs.psl.model.rule.arithmetic.expression.coefficient.Coefficient;
 import org.linqs.psl.model.rule.arithmetic.expression.coefficient.ConstantNumber;
 import org.linqs.psl.model.rule.logical.WeightedLogicalRule;
@@ -45,12 +51,15 @@ import org.linqs.psl.reasoner.function.FunctionComparator;
 import org.junit.After;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public abstract class InferenceTest {
+    public static final int NUM_INFERENCE_RUNS = 10;
+
     protected abstract InferenceApplication getInference(List<Rule> rules, Database db);
 
     @After
@@ -278,29 +287,92 @@ public abstract class InferenceTest {
     public void initialValueTest() {
         TestModel.ModelInformation info = TestModel.getModel();
 
-        double oldObjective = 0.0f;
+        double oldAvgObjective = 0.0f;
         InitialValue oldInitialValue = null;
 
         for (InitialValue initialValue : InitialValue.values()) {
             Options.INFERENCE_INITIAL_VARIABLE_VALUE.set(initialValue.toString());
 
             Set<StandardPredicate> toClose = new HashSet<StandardPredicate>();
-            Database inferDB = info.dataStore.getDatabase(info.targetPartition, toClose, info.observationPartition);
-            InferenceApplication inference = getInference(info.model.getRules(), inferDB);
 
-            double objective = inference.inference();
-            inference.close();
-            inferDB.close();
+            double avgObjective = 0.0;
+            for (int i = 0; i < NUM_INFERENCE_RUNS; i++) {
+                Database inferDB = info.dataStore.getDatabase(info.targetPartition, toClose, info.observationPartition);
+                InferenceApplication inference = getInference(info.model.getRules(), inferDB);
+
+                avgObjective += inference.inference() / NUM_INFERENCE_RUNS;
+
+                inference.close();
+                inferDB.close();
+            }
 
             if (oldInitialValue != null) {
                 assertEquals(
                         String.format("Found differing values for two initial values: %s (%f) vs %s (%f).",
-                        oldInitialValue, oldObjective, initialValue, objective),
-                        objective, oldObjective, 0.05);
+                        oldInitialValue, oldAvgObjective, initialValue, avgObjective),
+                        avgObjective, oldAvgObjective, 0.05);
             }
 
-            oldObjective = objective;
+            oldAvgObjective = avgObjective;
             oldInitialValue = initialValue;
         }
+    }
+
+    /**
+     * Test that inference applications find a nearly feasible solution with a simplex constraint.
+     */
+    @Test
+    public void testSimplexConstraints() {
+        TestModel.ModelInformation info = TestModel.getModel();
+
+        List<Coefficient> coefficients = Arrays.asList((Coefficient)(new ConstantNumber(1.0f)));
+        List<SummationAtomOrAtom> atoms =  Arrays.asList(
+                (SummationAtomOrAtom)(new SummationAtom(info.predicates.get("Friends"),
+                new SummationVariableOrTerm[]{new SummationVariable("A"), new SummationVariable("B")}))
+        );;
+
+        // Add rule: Friends(+A, +B) = 1.0
+        info.model.addRule(new UnweightedArithmeticRule(
+                new ArithmeticRuleExpression(coefficients, atoms, FunctionComparator.EQ, new ConstantNumber(1))
+        ));
+
+        // Create inference application.
+        Database inferDB = info.dataStore.getDatabase(info.targetPartition, new HashSet<StandardPredicate>(), info.observationPartition);
+        InferenceApplication inference = getInference(info.model.getRules(), inferDB);
+
+        // Test the constraint is enforced by the inference application.
+        inference.inference();
+
+        float sum = 0.0f;
+        for (RandomVariableAtom cachedRandomVariableAtom : inferDB.getAllCachedRandomVariableAtoms()) {
+            sum += cachedRandomVariableAtom.getValue();
+        }
+
+        assertEquals(1.0f, sum, 0.1f);
+
+        inference.close();
+        inferDB.close();
+    }
+
+    /**
+     * Test that inference using evaluation within optimization runs.
+     */
+    @Test
+    public void reasonerEvaluateTest() {
+        TestModel.ModelInformation info = TestModel.getModel();
+
+        Set<StandardPredicate> toClose = new HashSet<StandardPredicate>();
+        Database inferDB = info.dataStore.getDatabase(info.targetPartition, toClose, info.observationPartition);
+        InferenceApplication inference = getInference(info.model.getRules(), inferDB);
+
+        Database truthDatabase = info.dataStore.getDatabase(info.truthPartition, info.dataStore.getRegisteredPredicates());
+
+        List<Evaluator> evaluators = new ArrayList<Evaluator>();
+        evaluators.add(new ContinuousEvaluator());
+
+        inference.inference(true, false, evaluators, truthDatabase);
+        inference.close();
+        inferDB.close();
+        truthDatabase.close();
     }
 }
