@@ -89,15 +89,17 @@ public class RankingEvaluator extends Evaluator {
 
     /**
      * Grab the Constant arguments of an atom at specified positions.
-     * Returns an ArrayList so that the default equals() method is a deep equality check.
+     * We make the list of Constants immutable because entities are immutable
      */
-    private ArrayList<Constant> getArgsAtPositions(GroundAtom atom, List<Integer> indexes) {
+    private List<Constant> getArgsAtPositions(GroundAtom atom, List<Integer> indexes) {
         Constant[] atomArgs = atom.getArguments();
-        ArrayList<Constant> argsAtPositions = new ArrayList<Constant>(indexes.size());
+        List<Constant> argsAtPositions = new ArrayList<Constant>(indexes.size());
+
         for (int index : indexes) {
             argsAtPositions.add(atomArgs[index]);
         }
-        return argsAtPositions;
+
+        return Collections.unmodifiableList(argsAtPositions);
     }
 
     @Override
@@ -126,8 +128,7 @@ public class RankingEvaluator extends Evaluator {
         }
 
         // We keep a map from entities to ArrayLists of all GroundAtoms which contain that entity.
-        // We use ArrayLists so that equality checks on their elements are deep.
-        Map<ArrayList<Constant>, ArrayList<GroundAtom>> sortedAtoms = new HashMap<ArrayList<Constant>, ArrayList<GroundAtom>>();
+        Map<List<Constant>, List<GroundAtom>> sortedAtoms = new HashMap<List<Constant>, List<GroundAtom>>();
 
         // Partition the predicted atoms into Lists
         // according to what entity they contain.
@@ -136,7 +137,7 @@ public class RankingEvaluator extends Evaluator {
                 continue;
             }
 
-            ArrayList<Constant> entity = getArgsAtPositions(atom, entityIndexes);
+            List<Constant> entity = getArgsAtPositions(atom, entityIndexes);
 
             if (!sortedAtoms.containsKey(entity)) {
                 sortedAtoms.put(entity, new ArrayList<GroundAtom>());
