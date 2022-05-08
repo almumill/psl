@@ -1,7 +1,7 @@
 /*
  * This file is part of the PSL software.
  * Copyright 2011-2015 University of Maryland
- * Copyright 2013-2021 The Regents of the University of California
+ * Copyright 2013-2022 The Regents of the University of California
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ package org.linqs.psl.parser;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import org.linqs.psl.PSLTest;
 import org.linqs.psl.model.atom.QueryAtom;
 import org.linqs.psl.model.rule.Rule;
 import org.linqs.psl.model.rule.arithmetic.WeightedArithmeticRule;
 import org.linqs.psl.model.rule.arithmetic.expression.SummationAtom;
 import org.linqs.psl.model.rule.arithmetic.expression.SummationAtomOrAtom;
+import org.linqs.psl.test.PSLTest;
 import org.linqs.psl.util.ListUtils;
 
 import org.junit.Test;
@@ -991,6 +991,96 @@ public class ModelLoaderTest extends LoaderTest{
             // "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A != B) = 0.0 .",  // Duplicate rule ignored.
             "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A % B) = 0.0 .",
             // "1.0 * SINGLE(A) + 1.0 * SINGLE(B) + 1.0 * (A % B) = 0.0 .",  // Duplicate rule ignored.
+        };
+
+        PSLTest.assertModel(input, expected);
+    }
+
+    @Test
+    public void testNumericArithmeticTerm() {
+        String input = null;
+        String[] expected = null;
+
+        input =
+            "Single(A) - 1.0 = Single(B) .\n" +
+            "-1.0 + Single(A) = Single(B) .\n" +
+            "0.0 - 1.0 + Single(A) = Single(B) .\n" +
+            "-1.0 + 0.0 + Single(A) = Single(B) .\n" +
+
+            "Single(A) = Single(B) + 1.0 .\n" +
+            "Single(A) = Single(B) + 1.0 .\n" +
+            "Single(A) = 1.0 + Single(B) .\n" +
+            "Single(A) = 0.0 + 1.0 + Single(B) .\n" +
+            "Single(A) = 0.0 - -1.0 + Single(B) .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = 1.0 .",
+        };
+
+        PSLTest.assertModel(input, expected);
+
+        input =
+            "Single(A) + 1.0 = Single(B) .\n" +
+            "1.0 + Single(A) = Single(B) .\n" +
+            "0.0 + 1.0 + Single(A) = Single(B) .\n" +
+            "1.0 + 0.0 + Single(A) = Single(B) .\n" +
+
+            "Single(A) = Single(B) - 1.0 .\n" +
+            "Single(A) = Single(B) - 1.0 .\n" +
+            "Single(A) = -1.0 + Single(B) .\n" +
+            "Single(A) = 0.0 - 1.0 + Single(B) .\n" +
+            "Single(A) = 0.0 + -1.0 + Single(B) .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = -1.0 .",
+        };
+
+        PSLTest.assertModel(input, expected);
+
+        input =
+            " 2.0 + Single(A) =  3.0 + Single(B) .\n" +
+            " 2.0 + Single(A) = Single(B) + 3.0 .\n" +
+            "Single(A) + 2.0 =  3.0 + Single(B) .\n" +
+            "Single(A) + 2.0 = Single(B) + 3.0 .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = 1.0 .",
+        };
+
+        PSLTest.assertModel(input, expected);
+
+        input =
+            "-2.0 + Single(A) =  3.0 + Single(B) .\n" +
+            "-2.0 + Single(A) = Single(B) + 3.0 .\n" +
+            "Single(A) - 2.0 =  3.0 + Single(B) .\n" +
+            "Single(A) - 2.0 = Single(B) + 3.0 .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = 5.0 .",
+        };
+
+        PSLTest.assertModel(input, expected);
+
+        input =
+            " 2.0 + Single(A) = -3.0 + Single(B) .\n" +
+            " 2.0 + Single(A) = Single(B) - 3.0 .\n" +
+            "Single(A) + 2.0 = -3.0 + Single(B) .\n" +
+            "Single(A) + 2.0 = Single(B) - 3.0 .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = -5.0 .",
+        };
+
+        PSLTest.assertModel(input, expected);
+
+        input =
+            "-2.0 + Single(A) = -3.0 + Single(B) .\n" +
+            "-2.0 + Single(A) = Single(B) - 3.0 .\n" +
+            "Single(A) - 2.0 = -3.0 + Single(B) .\n" +
+            "Single(A) - 2.0 = Single(B) - 3.0 .\n" +
+            "";
+        expected = new String[]{
+            "1.0 * SINGLE(A) + -1.0 * SINGLE(B) = -1.0 .",
         };
 
         PSLTest.assertModel(input, expected);
